@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 ### IntelliJ IDEA ###
-.idea
+# .idea
 *.iws
 *.iml
 *.ipr
