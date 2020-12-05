@@ -133,3 +133,5 @@ dmypy.json
 *.iws
 *.iml
 *.ipr
+
+local_config.py
