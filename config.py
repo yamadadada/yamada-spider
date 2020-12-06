@@ -6,3 +6,8 @@ spiders = [
     'author_data_spider.py',
     'rank_add.py',
     'tag.py', ]
+
+redis_key = {
+    "author_interval": "author::interval",
+    "author_interval_prefix": "antuhor::interval::"
+}

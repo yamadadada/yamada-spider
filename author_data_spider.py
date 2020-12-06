@@ -1,9 +1,11 @@
-from db import db
+# from db import db
 import datetime
 from biliob import BiliobSpider
 import asyncio
 from cookies_pool import cookies_pool
 from fake_useragent import UserAgent
+from config import redis_key
+
 ua = UserAgent()
 
 
@@ -43,7 +45,6 @@ class BiliOBAuthorDataSpider(BiliobSpider):
         # url = '{}://api.bilibili.com/x/web-interface/card?mid={}'
 
         mid_gener = self.mid_gener()
-        count = 1
         async for each in mid_gener:
             yield each
             await asyncio.sleep(0)
@@ -60,7 +61,7 @@ class BiliOBAuthorDataSpider(BiliobSpider):
             try:
                 # self.logger.info('1' + self.proxy)
                 res = await self.get(url.format(mid))
-                if res == None:
+                if res is None:
                     return await self.reset_interval("解析基础信息出错", mid)
                 j = res.json_data
                 if 'code' in j and j['code'] == -412:
@@ -70,7 +71,8 @@ class BiliOBAuthorDataSpider(BiliobSpider):
                 return await self.reset_interval("解析基础信息出错", mid)
             # 删除
             if j['code'] == -400 or j['code'] == -404:
-                self.db.author_interval.delete_one({'mid': mid})
+                self.redis_db.zrem(redis_key['author_interval'], mid)
+                # self.db.author_interval.delete_one({'mid': mid})
                 self.logger.warning(j)
                 return None
             if 'code' in j and j['code'] == -412:
@@ -80,41 +82,25 @@ class BiliOBAuthorDataSpider(BiliobSpider):
                 return await self.reset_interval("数据疑似被缓存", mid)
             sex = j['data']['card']['sex']
             face = j['data']['card']['face']
-            if 'card' in j and 'data' in j['card'] and j['data']['card'] == None:
-                saved_data = db['author'].find_one({'mid': mid})
-                if saved_data == None or 'data' not in saved_data:
-                    db['author_interval'].remove({'mid': mid})
-                return await self.reset_interval("解析基础信息出错", mid)
+            # if 'card' in j and 'data' in j['card'] and j['data']['card'] == None:
+            #     saved_data = db['author'].find_one({'mid': mid})
+            #     if saved_data == None or 'data' not in saved_data:
+            #         db['author_interval'].remsaved_dataove({'mid': mid})
+            #     return await self.reset_interval("解析基础信息出错", mid)
             level = j['data']['card']['level_info']['current_level']
             official = j['data']['card']['Official']['title']
             archive = j['data']['archive_count']
             article = j['data']['article_count']
             fans = j['data']['follower']
             attention = j['data']['card']['attention']
-            item = {}
-            item['mid'] = int(mid)
-            item['name'] = name
-            item['face'] = face
-            item['official'] = official
-            item['sex'] = sex
-            item['level'] = int(level)
-            item['data'] = {
-                'fans': int(fans),
-                'attention': int(attention),
-                'archive': int(archive),
-                'article': int(article),
-                'datetime': datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-            }
-            item['c_fans'] = int(fans)
-            item['c_attention'] = int(attention)
-            item['c_archive'] = int(archive)
-            item['c_article'] = int(article)
+            item = {'mid': int(mid), 'name': name, 'face': face, 'official': official, 'sex': sex, 'level': int(level),
+                    'fans': int(fans), 'attention': int(attention), 'archive': int(archive), 'article': int(article)}
 
             if self.crawl_like_and_count:
                 try:
                     view_data_res = await self.get(
                         "{}://api.bilibili.com/x/space/upstat?mid={}".format('http', mid))
-                    if view_data_res == None:
+                    if view_data_res is None:
                         return await self.reset_interval("解析UP主播放、点赞出错", mid)
                     j = view_data_res.json_data
                     if 'code' in j and j['code'] == -412:
@@ -125,28 +111,25 @@ class BiliOBAuthorDataSpider(BiliobSpider):
                 archive_view = j['data']['archive']['view']
                 article_view = j['data']['article']['view']
                 like = j['data']['likes']
-                item['data']['archiveView'] = archive_view
-                item['data']['articleView'] = article_view
-                item['data']['like'] = like
-                item['c_like'] = like
-                item['c_archive_view'] = int(archive_view)
-                item['c_article_view'] = int(article_view)
+                item['like'] = like
+                item['archive_view'] = int(archive_view)
+                item['article_view'] = int(article_view)
 
-            now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
-            last_data = self.db.author_data.find_one(
-                {'mid': item['mid'], 'datetime': {'$lt': now - datetime.timedelta(1)}})
-            if last_data == None:
-                last_data = self.db.author_data.find_one(
-                    {'mid': item['mid']})
-                if (last_data != None):
-                    item['c_rate'] = item['data']['fans'] - last_data['fans']
-                else:
-                    item["c_rate"] = 0
-            else:
-                delta_seconds = now.timestamp() - last_data['datetime'].timestamp()
-                delta_fans = item['data']['fans'] - last_data['fans']
-                item['c_rate'] = int(delta_fans / delta_seconds * 86400)
-            # self.proxy = await self.proxy_gener.__anext__()
+            # now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+            # last_data = self.db.author_data.find_one(
+            #     {'mid': item['mid'], 'datetime': {'$lt': now - datetime.timedelta(1)}})
+            # if last_data is None:
+            #     last_data = self.db.author_data.find_one(
+            #         {'mid': item['mid']})
+            #     if last_data is not None:
+            #         item['c_rate'] = item['data']['fans'] - last_data['fans']
+            #     else:
+            #         item["c_rate"] = 0
+            # else:
+            #     delta_seconds = now.timestamp() - last_data['datetime'].timestamp()
+            #     delta_fans = item['data']['fans'] - last_data['fans']
+            #     item['c_rate'] = int(delta_fans / delta_seconds * 86400)
+            # # self.proxy = await self.proxy_gener.__anext__()
             return item
         except Exception as e:
             self.logger.exception(e)
@@ -154,7 +137,7 @@ class BiliOBAuthorDataSpider(BiliobSpider):
 
     async def save(self, item):
         try:
-            if item == None:
+            if item is None:
                 return 0
             mid = item['mid']
             s = {

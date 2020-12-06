@@ -1,83 +1,99 @@
 import socket
 import asyncio
 from time import sleep
-from db import async_db, db
+# from db import async_db, db
+from db import mysql_db, redis_db
 import datetime
 from simpyder.spiders import AsynSpider
 from simpyder import FAKE_UA
 from utils import enc
 from utils import dec
 import os
+from config import redis_key
+import time
 
 env_dist = os.environ
 
 
 class BiliobSpider(AsynSpider):
 
-    async def gen_proxy(self):
-        url = env_dist['PYOXIES_URL']
-        while True:
-            try:
-                async with self.sem_gen_proxy:
-                    res = await self.get(f"{url}/proxies", proxy=None)
-                proxies = await res.json()
-                self.logger.info(
-                    f"Get Proxies From: {url}/proxies")
-                for proxy in proxies['proxies']:
-                    self.logger.info(
-                        f"Get Proxies : {proxy}")
-                    yield proxy
-                await asyncio.sleep(1)
-            except Exception as e:
-                self.logger.exception(e)
+    # async def gen_proxy(self):
+    #     url = env_dist['PYOXIES_URL']
+    #     while True:
+    #         try:
+    #             async with self.sem_gen_proxy:
+    #                 res = await self.get(f"{url}/proxies", proxy=None)
+    #             proxies = await res.json()
+    #             self.logger.info(
+    #                 f"Get Proxies From: {url}/proxies")
+    #             for proxy in proxies['proxies']:
+    #                 self.logger.info(
+    #                     f"Get Proxies : {proxy}")
+    #                 yield proxy
+    #             await asyncio.sleep(1)
+    #         except Exception as e:
+    #             self.logger.exception(e)
 
     def __init__(self, name="BiliOB Spider", interval=1.5, concurrency=4, use_proxy=True):
         self.sem_gen_proxy = asyncio.Semaphore(1)
         super().__init__(name=name, user_agent=FAKE_UA,
                          interval=interval, concurrency=concurrency)
         loop = asyncio.get_event_loop()
-        self.db = db
-        self.async_db = async_db
+        # self.db = db
+        # self.async_db = async_db
+        self.mysql_db = mysql_db
+        self.redis_db = redis_db
         self.hostname = socket.gethostname()
-        self.use_proxy = use_proxy
+        self.use_proxy = False
+        # self.use_proxy = use_proxy
 
     async def mid_gener(self):
         last_data = set()
         while True:
             try:
-                # 如果存在锁
-                # if self.db.lock.count_documents({"name": "author_data_spider"}):
-                #   await asyncio.sleep(0.1)
-                #   continue
-
-                # 挂锁
-                # await self.async_db['lock'].insert_one(
-                #     {"name": "author_data_spider", "date": datetime.datetime.utcnow()})
-                data = []
-
-                mc = self.async_db.author_interval.find(
-                    {'next': {'$lt': datetime.datetime.utcnow()}}).sort([('next', 1)]).limit(100)
-                async for d in mc:
-                    # 手动操作设置为已经执行
-                    data.append(d)
-                    if 'order' in d:
-                        await self.async_db.user_record.update_many({'_id': {'$in': d['order']}}, {'$set': {
-                            'isExecuted': True
-                        }})
-
-                # 解锁
-                # await self.async_db.lock.delete_one(
-                #     {"name": "author_data_spider"})
+                data = self.redis_db.zrangebyscore(redis_key['author_interval'], 0, time.time(), start=0, num=100)
                 tmp_set = set()
                 for each_data in data:
-                    if 'mid' not in each_data:
-                        self.async_db.author_interval.delete_one({'mid': None})
-                        self.logger.warning('删除没有mid的author interval记录')
-                        continue
-                    if each_data['mid'] not in last_data:
-                        yield each_data['mid']
-                        tmp_set.add(each_data['mid'])
+                    if each_data not in last_data:
+                        interval = int(self.redis_db.get(redis_key['author_interval_prefix'] + each_data))
+                        self.redis_db.zadd(redis_key['author_interval'], each_data, time.time() + interval)
+                        yield int(each_data)
+                        tmp_set.add(each_data)
                 last_data = tmp_set
+
+                # # 如果存在锁
+                # # if self.db.lock.count_documents({"name": "author_data_spider"}):
+                # #   await asyncio.sleep(0.1)
+                # #   continue
+                #
+                # # 挂锁
+                # # await self.async_db['lock'].insert_one(
+                # #     {"name": "author_data_spider", "date": datetime.datetime.utcnow()})
+                # data = []
+                #
+                # mc = self.async_db.author_interval.find(
+                #     {'next': {'$lt': datetime.datetime.utcnow()}}).sort([('next', 1)]).limit(100)
+                # async for d in mc:
+                #     # 手动操作设置为已经执行
+                #     data.append(d)
+                #     if 'order' in d:
+                #         await self.async_db.user_record.update_many({'_id': {'$in': d['order']}}, {'$set': {
+                #             'isExecuted': True
+                #         }})
+                #
+                # # 解锁
+                # # await self.async_db.lock.delete_one(
+                # #     {"name": "author_data_spider"})
+                # tmp_set = set()
+                # for each_data in data:
+                #     if 'mid' not in each_data:
+                #         self.async_db.author_interval.delete_one({'mid': None})
+                #         self.logger.warning('删除没有mid的author interval记录')
+                #         continue
+                #     if each_data['mid'] not in last_data:
+                #         yield each_data['mid']
+                #         tmp_set.add(each_data['mid'])
+                # last_data = tmp_set
             except Exception as e:
                 self.logger.exception(e)
 
