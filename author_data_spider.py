@@ -5,6 +5,7 @@ import asyncio
 from cookies_pool import cookies_pool
 from fake_useragent import UserAgent
 from config import redis_key
+import time
 
 ua = UserAgent()
 
@@ -139,35 +140,20 @@ class BiliOBAuthorDataSpider(BiliobSpider):
         try:
             if item is None:
                 return 0
-            mid = item['mid']
-            s = {
-                'focus': True,
-                'sex': item['sex'],
-                'name': item['name'],
-                'face': item['face'],
-                'level': item['level'],
-                'cFans': item['c_fans'],
-                'cRate': item['c_rate'],
-                'cLike': item['c_like'],
-                'cArchive_view': item['c_archive_view'],
-                'cArticle_view': item['c_article_view'],
-                'cArchive': item['c_archive'],
-                'cArticle': item['c_article'],
-                'official': item['official'],
-                'data': item['data']
-            }
-            await self.async_db.author.update_one({
-                'mid': item['mid']
-            }, {
-                '$set': s
-            }, True)
+            cursor = self.mysql_db.cursor()
+            sql = "update `author` set `name` = '{}', `sex` = '{}', `face` = '{}', `level` = {}, `official` = '{}', " \
+                  "`archive` = {}, `archive_view` = {}, `article` = {}, `article_view` = {}, `attention` = {}, " \
+                  "`fans` = {}, `like` = {} where mid = {}".format(item['name'], item['sex'], item['face'],
+                                                                   item['level'], item['official'], item['archive'],
+                                                                   item['archive_view'], item['article'],
+                                                                   item['article_view'], item['attention'],
+                                                                   item['fans'], item['like'], item['mid'])
+            cursor.execute(sql)
+            self.mysql_db.commit()
 
-            item['data']['mid'] = item['mid']
-            await self.async_db.author_data.replace_one(
-                {'mid': item['data']['mid'],
-                 #  'src': self.hostname,
-                 'datetime': item['data']['datetime']}, item['data'], upsert=True)
-            await self.update_author_interval_by_mid(mid)
+            interval = int(self.redis_db.get(redis_key['author_interval_prefix'] + str(item['mid'])))
+            self.redis_db.zadd(redis_key['author_interval'], {str(item['mid']): time.time() + interval})
+
             return item
         except Exception as e:
             self.logger.exception(e)

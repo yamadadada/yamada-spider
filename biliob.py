@@ -55,8 +55,6 @@ class BiliobSpider(AsynSpider):
                 tmp_set = set()
                 for each_data in data:
                     if each_data not in last_data:
-                        interval = int(self.redis_db.get(redis_key['author_interval_prefix'] + each_data))
-                        self.redis_db.zadd(redis_key['author_interval'], each_data, time.time() + interval)
                         yield int(each_data)
                         tmp_set.add(each_data)
                 last_data = tmp_set
