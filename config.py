@@ -10,5 +10,6 @@ spiders = [
 
 redis_key = {
     "author_interval": "author::interval",
-    "author_interval_prefix": "antuhor::interval::"
+    "author_interval_prefix": "antuhor::interval::",
+    "follow_list": "follow::list"
 }
