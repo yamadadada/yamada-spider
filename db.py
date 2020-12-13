@@ -18,4 +18,4 @@ env_dist = os.environ
 mysql_db = pymysql.connect(db_host, db_user, db_password, db_database)
 
 redis_db = redis.Redis(host=redis_host, port=redis_port, db=redis_db_index, password=redis_password,
-                       decode_responses=True)
+                       decode_responses=True, health_check_interval=30)
